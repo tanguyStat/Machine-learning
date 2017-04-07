@@ -1,0 +1,90 @@
+---
+title: "Machine learning project"
+author: "Tanguy"
+date: "April 6, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive summary
+The goal of this project is to predict the outcome variable called classe which can take value from class A to class E. Class A is a well-performed exercise and the other classes correspond to execution mistakes in doing the exercise.
+The first step prior to any use of algorithm is to clean the data.The training file is then divided in a training and validation set. Decisions are made taking into account the necessity to decrease the computation time. Then, the two more "famous" model studied in the course, namely random forest and boosting, have their accuracy compared on the validation dataset. The best model is random forest and it is applied to the testing set.
+
+
+## 1. Loading, viewing and cleaning data
+```{r }
+library(ggplot2)
+setwd("~/Cours/Machine learning/Assignment")
+## Loading data replacing missing values by NA
+trainingdata <- read.csv("pml-training.csv",na.strings=c("NA","#DIV/0!", ""))
+testingdata <- read.csv("pml-testing.csv",na.strings=c("NA","#DIV/0!", ""))
+## Data overview
+dim(trainingdata)
+dim(testingdata)
+##View(trainingdata)
+```
+The dataset contains 160 columns and a tremendous number of observations and also a lot of NA values in some columns.
+```{r }
+set.seed(500)
+## Data cleaning
+##Let's focus only on data from sensors (no user variation from instance)
+trainingdata <-trainingdata[,-c(1:7)]
+## Remove columns with not so much variation
+suppressMessages(library(caret))
+columnsLowVariance <- nearZeroVar(trainingdata, saveMetrics = TRUE)
+trainingdata <- trainingdata[, columnsLowVariance$nzv==FALSE]
+dim(trainingdata) 
+##Remove columns with a lot of NA
+treshold <- dim(trainingdata)[1] * 0.6
+columns <- !apply(trainingdata, 2, function(x) sum(is.na(x)) > treshold  || sum(x=="") > treshold)
+trainingdata <- trainingdata[,columns]
+dim(trainingdata) ##This is still too many
+```
+Let's try to run random forest with a small set of data, to evaluate importance of regressors and to remove the least important ones to keep "only" 20 variables.
+```{r }
+suppressMessages(library(randomForest))
+inTrain0 <- createDataPartition(trainingdata$classe, p = 0.1,list=FALSE)
+analysis <- trainingdata[inTrain0,]
+modFit0 <- train(classe ~ .,data=analysis,method="rf",importance = TRUE,prox=TRUE)
+```
+```{r }
+imp <- varImp(modFit0)
+print(imp)
+```
+Let's keep the 20 most important columns
+```{r}
+trainingdata <-trainingdata[,-c(4:9,14,15,17:20,21:23,24:26,28,31,33,34,42,43,44:46,48,49,50:52)]
+dim(trainingdata)
+```
+Perparing datasets:
+```{r }
+inTrain <- createDataPartition(trainingdata$classe, p = 0.7,list=FALSE)
+training <- trainingdata[ inTrain,]
+validating <- trainingdata[ -inTrain,]
+testing <- testingdata[,c(8,9,10,42:45,48,84,86,102,114,117:123,154,160)]
+```
+## 2. Use of algorithms
+The 2 most performant algorithms seen in the course are random forest and boosting. Let's use them now on the training set, compare their performance on the validation set and choose the best one to be used on the test set.
+```{r calculation}
+suppressMessages(library(randomForest))
+suppressMessages(library(caret))
+library(ggplot2)
+suppressMessages(library(gbm))
+##calculate models with training set
+modFit_rf <- train(classe ~ .,data=training,method="rf")
+modFit_boosting <- train(classe ~ .,data=training, method="gbm",verbose=FALSE)
+##predict with validation set
+prediction_rf <- predict(modFit_rf, validating)
+prediction_boosting <- predict(modFit_boosting, validating)
+##Assessing models
+confusionMatrix(prediction_rf, validating$classe)
+confusionMatrix(prediction_boosting, validating$classe)
+```
+To conclude, the best model is random forest with accuracy equal to 0.99. Boosting has also a quite high accuracy equal to 0.96. We apply the random forest model to the testing datatset.
+```{r }
+my_prediction <- predict(modFit_rf, testing)
+my_prediction
+```
